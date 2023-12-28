@@ -45,13 +45,13 @@ var icat = {
       const hourCount = dateDiff / hour;
       const minuteCount = dateDiff / minute;
 
-      if (monthCount >= 1) {
+      if (monthCount >= 0) {
         result = datePost.toLocaleDateString().replace(/\//g, "-");
-      } else if (dayCount >= 1) {
+      } else if (dayCount >= 0) {
         result = parseInt(dayCount) + " " + GLOBAL_CONFIG.date_suffix.day;
-      } else if (hourCount >= 1) {
+      } else if (hourCount >= 0) {
         result = parseInt(hourCount) + " " + GLOBAL_CONFIG.date_suffix.hour;
-      } else if (minuteCount >= 1) {
+      } else if (minuteCount >= 0) {
         result = parseInt(minuteCount) + " " + GLOBAL_CONFIG.date_suffix.min;
       } else {
         result = GLOBAL_CONFIG.date_suffix.just;
