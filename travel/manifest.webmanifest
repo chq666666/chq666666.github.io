@@ -1,0 +1,13 @@
+{
+  "name": "向青海出发 · 旅行随身手册",
+  "short_name": "青海旅行",
+  "description": "青海自驾旅行计划、行李清单、花费与预订管理",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f3f0e8",
+  "theme_color": "#123b49",
+  "icons": [
+    {"src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ]
+}

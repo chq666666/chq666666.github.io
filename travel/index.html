@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#123b49">
+  <meta name="description" content="青海自驾旅行计划、每日预订、行李清单与花费管理">
+  <title>向青海出发</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css">
+  <link rel="stylesheet" href="styles.css?v=23">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="主导航">
+      <a class="brand" href="#home" aria-label="向青海出发首页">
+        <span class="brand-mark">青</span>
+        <span><strong>向青海出发</strong><small>旅行随身手册</small></span>
+      </a>
+
+      <nav class="side-nav">
+        <a class="nav-item active" href="#home" data-view="home"><span>⌂</span>概览</a>
+        <a class="nav-item" href="#plan" data-view="plan"><span>⌁</span>行程</a>
+        <a class="nav-item" href="#checklist" data-view="checklist"><span>✓</span>清单</a>
+        <a class="nav-item" href="#expenses" data-view="expenses"><span>¥</span>花费</a>
+        <a class="nav-item" href="#safety" data-view="safety"><span>＋</span>注意事项</a>
+      </nav>
+
+      <div class="sidebar-foot">
+        <button class="text-button" id="exportButton">导出备份</button>
+        <button class="text-button" id="importButton">导入数据</button>
+        <input id="importFile" type="file" accept="application/json" hidden>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow" id="todayLabel"></p>
+          <h1 id="pageTitle">旅行概览</h1>
+        </div>
+        <div class="top-actions">
+          <button class="secondary-button cloud-button" id="cloudButton">仅本机</button>
+          <button class="secondary-button" id="installButton" hidden>安装到桌面</button>
+          <button class="round-button" id="settingsButton" aria-label="旅行设置">•••</button>
+        </div>
+      </header>
+
+      <section class="view active" id="homeView" data-view-panel="home">
+        <div class="hero-card">
+          <div class="hero-art" aria-hidden="true">
+            <span class="sun"></span>
+            <span class="mountain mountain-back"></span>
+            <span class="mountain mountain-front"></span>
+          </div>
+          <div class="hero-copy">
+            <p class="hero-kicker">2026 · AUTUMN ROAD TRIP</p>
+            <h2 id="heroTitle">西安 → 青海 → 兰州</h2>
+            <p id="heroDates">9月30日 — 10月6日 · 7天</p>
+            <div class="hero-route" aria-label="主要路线">
+              <span>西安</span><i>→</i><span>西宁</span><i>→</i><span>茶卡</span><i>→</i><span>祁连</span><i>→</i><span>门源</span><i>→</i><span>兰州</span>
+            </div>
+            <div class="hero-meta">
+              <span id="partyMeta">1 人同行</span>
+              <span id="budgetMeta">预算待设置</span>
+            </div>
+          </div>
+          <div class="countdown-card">
+            <strong class="tabular" id="countdownNumber">—</strong>
+            <span id="countdownText">距离出发</span>
+          </div>
+        </div>
+
+        <article class="weather-panel">
+          <div class="weather-heading">
+            <div><p class="eyebrow">WEATHER WINDOW</p><h2>沿途天气</h2><p id="weatherStatus">正在获取最新预报…</p></div>
+            <button class="weather-refresh" id="refreshWeatherButton" aria-label="刷新天气">↻ 刷新</button>
+          </div>
+          <div id="weatherStrip" class="weather-strip" aria-live="polite"></div>
+          <p class="weather-source">天气数据来自 <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a>，高原天气变化快，出发前请再次核对预警。</p>
+        </article>
+
+        <div class="stats-grid">
+          <article class="stat-card">
+            <span class="stat-icon blue">✓</span>
+            <div><strong id="checklistStat">0%</strong><small>行李已完成</small></div>
+          </article>
+          <article class="stat-card">
+            <span class="stat-icon orange">¥</span>
+            <div><strong id="expenseStat">¥0</strong><small>目前已记录</small></div>
+          </article>
+          <article class="stat-card">
+            <span class="stat-icon green">▣</span>
+            <div><strong id="bookingStat">0</strong><small>项预订已确认</small></div>
+          </article>
+        </div>
+
+        <div class="home-grid">
+          <article class="panel next-panel">
+            <div class="section-heading">
+              <div><p class="eyebrow">NEXT STEP</p><h2>出发前优先处理</h2></div>
+              <a href="#checklist" data-jump="checklist">查看清单</a>
+            </div>
+            <div id="priorityList" class="priority-list"></div>
+          </article>
+
+          <article class="panel budget-panel">
+            <div class="section-heading">
+              <div><p class="eyebrow">BUDGET</p><h2>预算概况</h2></div>
+              <a href="#expenses" data-jump="expenses">记一笔</a>
+            </div>
+            <div class="budget-total"><span>已花费</span><strong id="budgetSpent">¥0</strong></div>
+            <div class="progress-track"><span id="budgetBar"></span></div>
+            <div class="budget-caption"><span id="budgetPercent">尚未设置预算</span><span id="budgetRemaining"></span></div>
+          </article>
+        </div>
+
+        <article class="panel upcoming-panel">
+          <div class="section-heading">
+            <div><p class="eyebrow">ITINERARY</p><h2>旅程日历</h2></div>
+            <a href="#plan" data-jump="plan">编辑行程</a>
+          </div>
+          <div id="miniTimeline" class="mini-timeline"></div>
+        </article>
+      </section>
+
+      <section class="view" id="planView" data-view-panel="plan" hidden>
+        <div class="section-intro">
+          <div><p class="eyebrow">YOUR ROUTE</p><h2>每日行程</h2><p>路线、天气、酒店门票和旅途照片，都收在同一条时间线上。</p></div>
+          <button class="primary-button" id="addDayButton">增加一天</button>
+        </div>
+        <article class="route-map-panel">
+          <div class="route-map-heading">
+            <div><p class="eyebrow">TRIP MAP</p><h2>行程路线地图</h2><p>输入地名即可自动定位；点击地点可编辑资料、打卡和上传照片。</p></div>
+            <div class="route-map-tools">
+              <button class="secondary-button" data-add-map-stop>＋ 添加地点</button>
+              <div class="route-map-progress"><strong id="mapCheckinCount">0 / 7</strong><span>地点已打卡</span></div>
+            </div>
+          </div>
+          <div class="route-map-shell">
+            <div id="routeMapCanvas" class="route-map-canvas" aria-label="西安至青海和兰州的真实地图路线，可缩放和拖动"></div>
+            <span class="route-map-badge" id="routeMapBadge">轻量矢量地图 · 可缩放拖动</span>
+          </div>
+          <div id="mapStopDetail" class="map-stop-detail" aria-live="polite"></div>
+        </article>
+        <div id="itineraryList" class="itinerary-list"></div>
+      </section>
+
+      <section class="view" id="checklistView" data-view-panel="checklist" hidden>
+        <div class="section-intro">
+          <div><p class="eyebrow">PACK LIGHT</p><h2>出行清单</h2><p id="checklistSummary">准备好再出发。</p></div>
+          <button class="primary-button" id="addChecklistButton">添加物品</button>
+        </div>
+        <div class="checklist-progress panel">
+          <div><strong id="checklistDoneText">0 / 0</strong><span>已完成</span></div>
+          <div class="progress-track"><span id="checklistBar"></span></div>
+        </div>
+        <div id="checklistGroups" class="checklist-groups"></div>
+      </section>
+
+      <section class="view" id="expensesView" data-view-panel="expenses" hidden>
+        <div class="section-intro">
+          <div><p class="eyebrow">MONEY TRACKER</p><h2>花费记录</h2><p>记下付款人和类别，结算时不会乱。</p></div>
+          <button class="primary-button" id="addExpenseButton">记一笔</button>
+        </div>
+        <div class="expense-summary">
+          <article class="summary-card"><span>总支出</span><strong id="totalExpense">¥0.00</strong></article>
+          <article class="summary-card"><span>剩余预算</span><strong id="remainingBudget">—</strong></article>
+          <article class="summary-card"><span>人均支出</span><strong id="perPersonExpense">¥0.00</strong></article>
+        </div>
+        <div class="expense-layout">
+          <article class="panel">
+            <div class="section-heading"><h2>最近记录</h2><button class="text-button danger" id="clearExpensesButton">清空</button></div>
+            <div id="expenseList" class="expense-list"></div>
+          </article>
+          <article class="panel category-panel">
+            <div class="section-heading"><h2>分类统计</h2></div>
+            <div id="categoryChart" class="category-chart"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" id="safetyView" data-view-panel="safety" hidden>
+        <div class="section-intro">
+          <div><p class="eyebrow">TRAVEL SAFE</p><h2>高原自驾注意事项</h2><p>遇到天气或身体变化时，安全永远排在行程前面。</p></div>
+        </div>
+        <div class="safety-grid">
+          <article class="safety-card warm"><span>高原反应</span><h3>慢一点，别硬扛</h3><p>首日避免剧烈运动和饮酒。出现持续头痛、呕吐、明显气促或意识异常，应停止上升、尽快降低海拔并就医。</p></article>
+          <article class="safety-card cool"><span>天气与保暖</span><h3>按冬季思路备衣</h3><p>高原昼夜温差大，带保暖层、防风防水外套、帽子和手套。每天出发前检查降雪、大风及道路信息。</p></article>
+          <article class="safety-card teal"><span>驾驶原则</span><h3>不赶夜路，不冒险</h3><p>不进入未开放道路和无人区；遇牲畜、暗冰或低能见度主动降速。油量接近一半时就开始寻找补给。</p></article>
+          <article class="safety-card sand"><span>防晒与补水</span><h3>紫外线比想象中强</h3><p>准备高倍防晒、墨镜、帽子、润唇膏和饮用水，少量多次补水，注意不要过度饮水。</p></article>
+        </div>
+        <article class="panel emergency-panel">
+          <div class="section-heading"><div><p class="eyebrow">EMERGENCY</p><h2>紧急联系</h2></div><button class="text-button" id="editContactsButton">编辑</button></div>
+          <div class="emergency-grid">
+            <a href="tel:110"><span>报警</span><strong>110</strong></a>
+            <a href="tel:120"><span>急救</span><strong>120</strong></a>
+            <a href="tel:122"><span>交通事故</span><strong>122</strong></a>
+            <div><span>紧急联系人</span><strong id="emergencyContactDisplay">待填写</strong></div>
+            <div><span>租车救援</span><strong id="rentalContactDisplay">待填写</strong></div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="移动端主导航">
+      <a class="active" href="#home" data-view="home"><span>⌂</span>概览</a>
+      <a href="#plan" data-view="plan"><span>⌁</span>行程</a>
+      <a href="#checklist" data-view="checklist"><span>✓</span>清单</a>
+      <a href="#expenses" data-view="expenses"><span>¥</span>花费</a>
+      <a href="#safety" data-view="safety"><span>＋</span>注意</a>
+    </nav>
+  </div>
+
+  <dialog id="formDialog">
+    <form method="dialog" id="dynamicForm">
+      <div class="dialog-header"><div><p class="eyebrow" id="dialogEyebrow">EDIT</p><h2 id="dialogTitle">编辑</h2></div><button class="round-button" type="button" data-dialog-close aria-label="关闭">×</button></div>
+      <div id="dialogFields" class="dialog-fields"></div>
+      <div id="formError" class="form-error" role="alert"></div>
+      <div class="dialog-actions"><button class="secondary-button" type="button" data-dialog-close>取消</button><button class="primary-button" id="dialogSaveButton" type="submit">保存</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="photoDialog" class="photo-dialog">
+    <button class="photo-dialog-close" id="photoDialogClose" aria-label="关闭照片">×</button>
+    <img id="photoDialogImage" alt="旅途照片预览">
+    <p id="photoDialogCaption"></p>
+  </dialog>
+
+  <dialog id="shareDialog" class="share-dialog">
+    <div class="share-dialog-inner">
+      <div class="dialog-header">
+        <div><p class="eyebrow">SHARED TRIP</p><h2>共享协作</h2></div>
+        <button class="round-button" type="button" id="shareDialogClose" aria-label="关闭">×</button>
+      </div>
+      <p class="share-description" id="shareDescription">正在检查云端状态…</p>
+      <div class="share-config-help" id="shareConfigHelp" hidden>
+        <strong>还差一次云端配置</strong>
+        <span>运行项目中的 supabase-setup.sql，然后在 cloud-config.js 填入项目地址和 publishable/anon key。</span>
+      </div>
+      <div class="share-link-box" id="shareLinkBox" hidden>
+        <label for="shareLinkInput">把这个完整链接发给同行人</label>
+        <input id="shareLinkInput" type="text" readonly>
+        <small>链接包含编辑密钥，请只分享给同行人。</small>
+      </div>
+      <div class="dialog-actions share-actions">
+        <button class="secondary-button" type="button" id="syncNowButton" hidden>立即同步</button>
+        <button class="primary-button" type="button" id="createShareButton" hidden>创建共享行程</button>
+        <button class="primary-button" type="button" id="copyShareButton" hidden>复制共享链接</button>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="vendor/leaflet/leaflet.js"></script>
+  <script src="vendor/maplibre/maplibre-gl.js"></script>
+  <script src="vendor/maplibre/leaflet-maplibre-gl.js"></script>
+  <script src="cloud-config.js?v=24"></script>
+  <script src="app.js?v=23"></script>
+<script async>window.onload=function(){var a=document.createElement('script'),b=document.getElementsByTagName('script')[0];a.type='text/javascript',a.async=!0,a.src='/sw-register.js?v='+Date.now(),b.parentNode.insertBefore(a,b)};</script></body></html>
