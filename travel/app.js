@@ -75,8 +75,9 @@ function dateRange(start, end) {
 
 function defaultState() {
   const itinerary = itinerarySeed.map(day => ({ id: uid('day'), ...day }));
+  const publicChecklistId = 'checklist-public';
   return {
-    version: 7,
+    version: 8,
     meta: {
       title: '西安 → 青海 → 兰州',
       startDate: '2026-09-29',
@@ -87,8 +88,9 @@ function defaultState() {
       rentalContact: ''
     },
     itinerary,
+    checklistLists: [{ id: publicChecklistId, name: '公共清单', type: 'public' }],
     checklist: checklistSeed.flatMap(([category, names]) => names.map((name, index) => ({
-      id: uid('check'), category, name, done: false,
+      id: uid('check'), listId: publicChecklistId, category, name, done: false,
       priority: (category === '证件与订单' && index < 4) || name === '确认道路救援范围'
     }))),
     expenses: [],
@@ -139,7 +141,12 @@ function loadState() {
         dayId: stop.dayId || migrated.itinerary.find(day => day.date === stop.date)?.id || ''
       }));
     }
-    migrated.version = 7;
+    if (savedVersion < 8 || !Array.isArray(migrated.checklistLists) || !migrated.checklistLists.length) {
+      migrated.checklistLists = defaults.checklistLists;
+      migrated.checklist = (Array.isArray(migrated.checklist) ? migrated.checklist : defaults.checklist)
+        .map(item => ({ ...item, listId: item.listId || defaults.checklistLists[0].id }));
+    }
+    migrated.version = 8;
     return migrated;
   } catch {
     return defaultState();
@@ -483,7 +490,8 @@ const editControlSelector = [
   '[data-edit-booking]', '[data-delete-booking]', '[data-delete-photo]',
   '.photo-upload-button', '[data-add-map-stop]', '[data-edit-map-stop]',
   '[data-toggle-checkin]', '[data-delete-map-stop]', '[data-delete-check]',
-  '[data-delete-expense]'
+  '[data-delete-expense]', '[data-add-checklist-item]', '[data-edit-checklist-list]',
+  '[data-delete-checklist-list]'
 ].join(',');
 
 function applyAccessMode() {
@@ -589,10 +597,21 @@ async function cloudRpc(name, payload) {
 function normalizeCloudState(value) {
   const defaults = defaultState();
   if (!value?.meta || !Array.isArray(value.itinerary) || !Array.isArray(value.checklist)) throw new Error('云端行程数据格式不正确。');
+  const checklistLists = Array.isArray(value.checklistLists) && value.checklistLists.length
+    ? value.checklistLists
+    : defaults.checklistLists;
+  const checklistListIds = new Set(checklistLists.map(list => list.id));
+  const fallbackListId = checklistLists[0].id;
   return {
     ...defaults,
     ...value,
+    version: 8,
     meta: { ...defaults.meta, ...value.meta },
+    checklistLists,
+    checklist: value.checklist.map(item => ({
+      ...item,
+      listId: checklistListIds.has(item.listId) ? item.listId : fallbackListId
+    })),
     expenses: Array.isArray(value.expenses) ? value.expenses : [],
     bookings: Array.isArray(value.bookings) ? value.bookings : [],
     checkins: value.checkins && typeof value.checkins === 'object' ? value.checkins : {},
@@ -817,7 +836,7 @@ function renderHome() {
   priorityList.innerHTML = priorities.length ? priorities.map(item => `
     <label class="priority-item" data-check-row="${item.id}">
       <input type="checkbox" data-check-toggle="${item.id}">
-      <span>${esc(item.name)}</span>
+      <span>${esc(item.name)}<small>${esc(state.checklistLists?.find(list => list.id === item.listId)?.name || '公共清单')}</small></span>
     </label>`).join('') : '<div class="empty-inline">优先事项已完成，继续保持。</div>';
 
   $('#budgetSpent').textContent = money(totalExpense);
@@ -1084,21 +1103,47 @@ function renderChecklist() {
   const percent = total ? Math.round(done / total * 100) : 0;
   $('#checklistDoneText').textContent = `${done} / ${total}`;
   $('#checklistBar').style.width = `${percent}%`;
-  $('#checklistSummary').textContent = total ? `已完成 ${percent}%，还有 ${total - done} 项。` : '开始添加你的物品。';
+  const lists = Array.isArray(state.checklistLists) && state.checklistLists.length
+    ? state.checklistLists
+    : [{ id: 'checklist-public', name: '公共清单', type: 'public' }];
+  $('#checklistSummary').textContent = total
+    ? `${lists.length} 份共享清单 · 已完成 ${percent}%，还有 ${total - done} 项。`
+    : `${lists.length} 份共享清单，开始添加物品吧。`;
 
-  const categories = [...new Set(state.checklist.map(item => item.category))];
-  $('#checklistGroups').innerHTML = categories.length ? categories.map(category => {
-    const items = state.checklist.filter(item => item.category === category);
-    const count = items.filter(item => item.done).length;
-    return `<section class="check-group">
-      <div class="check-group-head"><h3>${esc(category)}</h3><span>${count}/${items.length}</span></div>
-      ${items.map(item => `<div class="check-row ${item.done ? 'checked' : ''}">
-        <input id="${item.id}" type="checkbox" data-check-toggle="${item.id}" ${item.done ? 'checked' : ''}>
-        <label for="${item.id}">${esc(item.name)}</label>
-        <button class="delete-mini" data-delete-check="${item.id}" aria-label="删除 ${esc(item.name)}">×</button>
-      </div>`).join('')}
-    </section>`;
-  }).join('') : '<div class="empty-state"><strong>清单还是空的</strong>添加第一件要带的东西吧。</div>';
+  $('#checklistGroups').innerHTML = lists.map(list => {
+    const listItems = state.checklist.filter(item => item.listId === list.id);
+    const listDone = listItems.filter(item => item.done).length;
+    const listPercent = listItems.length ? Math.round(listDone / listItems.length * 100) : 0;
+    const categories = [...new Set(listItems.map(item => item.category))];
+    const categoryHtml = categories.length ? categories.map(category => {
+      const items = listItems.filter(item => item.category === category);
+      const count = items.filter(item => item.done).length;
+      return `<section class="check-group">
+        <div class="check-group-head"><h4>${esc(category)}</h4><span>${count}/${items.length}</span></div>
+        ${items.map(item => `<div class="check-row ${item.done ? 'checked' : ''}">
+          <input id="${item.id}" type="checkbox" data-check-toggle="${item.id}" ${item.done ? 'checked' : ''}>
+          <label for="${item.id}">${esc(item.name)}</label>
+          <button class="delete-mini" data-delete-check="${item.id}" aria-label="删除 ${esc(item.name)}">×</button>
+        </div>`).join('')}
+      </section>`;
+    }).join('') : '<div class="empty-checklist-list">这份清单还没有物品。</div>';
+
+    return `<article class="checklist-board" data-checklist-list="${list.id}">
+      <div class="checklist-board-head">
+        <div>
+          <span class="checklist-kind">${list.type === 'public' ? '公共' : '按名字区分'}</span>
+          <h3>${esc(list.name)}</h3>
+          <p>${listDone}/${listItems.length} 已完成 · ${listPercent}%</p>
+        </div>
+        <div class="checklist-board-actions">
+          <button class="secondary-button" data-add-checklist-item="${list.id}">＋ 添加物品</button>
+          ${list.type !== 'public' ? `<button class="text-button" data-edit-checklist-list="${list.id}">改名</button><button class="text-button danger" data-delete-checklist-list="${list.id}">删除</button>` : ''}
+        </div>
+      </div>
+      <div class="checklist-list-progress"><span style="width:${listPercent}%"></span></div>
+      <div class="checklist-category-grid">${categoryHtml}</div>
+    </article>`;
+  }).join('');
 }
 
 function renderExpenses() {
@@ -1300,18 +1345,47 @@ function openMapStopForm(stop) {
   });
 }
 
-function openChecklistForm() {
+function openChecklistListForm(list) {
+  const isNew = !list;
+  openForm({
+    eyebrow: 'SHARED CHECKLIST', title: isNew ? '新建共享清单' : '清单改名', fields: [
+      { name: 'type', label: '清单类型', type: 'select', options: ['按名字区分', '公共清单'], value: list?.type === 'public' ? '公共清单' : '按名字区分', full: true },
+      { name: 'name', label: '名字 / 清单名称', value: list?.type === 'named' ? list.name.replace(/的清单$/, '') : '', placeholder: '例如：小明、摄影装备', full: true, hint: '选“按名字区分”时会显示为“小明的清单”；所有同行人仍然可见并可编辑。' }
+    ],
+    submitLabel: isNew ? '创建清单' : '保存名称',
+    onSubmit(data) {
+      state.checklistLists ||= [];
+      const isPublic = data.type === '公共清单';
+      if (isPublic && state.checklistLists.some(item => item.type === 'public' && item.id !== list?.id)) {
+        throw new Error('已经有一份公共清单，可直接在其中添加物品。');
+      }
+      const enteredName = data.name.trim();
+      if (!isPublic && !enteredName) throw new Error('请填写名字或清单名称。');
+      const name = isPublic
+        ? '公共清单'
+        : (/清单$/.test(enteredName) ? enteredName : `${enteredName}的清单`);
+      const payload = { name, type: isPublic ? 'public' : 'named' };
+      if (isNew) state.checklistLists.push({ id: uid('list'), ...payload });
+      else Object.assign(list, payload);
+      saveState(isNew ? '共享清单已创建' : '清单名称已更新');
+    }
+  });
+}
+
+function openChecklistItemForm(listId) {
+  const list = state.checklistLists?.find(item => item.id === listId);
+  if (!list) return showToast('找不到这份清单');
   const categories = [...new Set([...checklistSeed.map(item => item[0]), ...state.checklist.map(item => item.category)])];
   openForm({
-    eyebrow: 'PACKING LIST', title: '添加物品', fields: [
+    eyebrow: 'PACKING ITEM', title: `添加到“${list.name}”`, fields: [
       { name: 'name', label: '物品名称', required: true, full: true },
       { name: 'category', label: '分类', type: 'select', options: categories, value: categories[0] },
       { name: 'priority', label: '优先事项', type: 'select', options: ['否', '是'], value: '否' }
     ],
     submitLabel: '添加',
     onSubmit(data) {
-      state.checklist.push({ id: uid('check'), name: data.name.trim(), category: data.category, done: false, priority: data.priority === '是' });
-      saveState('已添加到清单');
+      state.checklist.push({ id: uid('check'), listId, name: data.name.trim(), category: data.category, done: false, priority: data.priority === '是' });
+      saveState(`已添加到“${list.name}”`);
     }
   });
 }
@@ -1492,6 +1566,23 @@ document.addEventListener('click', event => {
   }
   const addBooking = event.target.closest('[data-add-booking-day]');
   if (addBooking) { openBookingForm(null, addBooking.dataset.addBookingDay); return; }
+  const addChecklistItem = event.target.closest('[data-add-checklist-item]');
+  if (addChecklistItem) { openChecklistItemForm(addChecklistItem.dataset.addChecklistItem); return; }
+  const editChecklistList = event.target.closest('[data-edit-checklist-list]');
+  if (editChecklistList) {
+    openChecklistListForm(state.checklistLists.find(item => item.id === editChecklistList.dataset.editChecklistList));
+    return;
+  }
+  const deleteChecklistList = event.target.closest('[data-delete-checklist-list]');
+  if (deleteChecklistList) {
+    const list = state.checklistLists.find(item => item.id === deleteChecklistList.dataset.deleteChecklistList);
+    if (list && confirm(`删除“${list.name}”及其中全部物品吗？`)) {
+      state.checklistLists = state.checklistLists.filter(item => item.id !== list.id);
+      state.checklist = state.checklist.filter(item => item.listId !== list.id);
+      saveState('清单已删除');
+    }
+    return;
+  }
   const deleteCheck = event.target.closest('[data-delete-check]');
   if (deleteCheck) {
     state.checklist = state.checklist.filter(item => item.id !== deleteCheck.dataset.deleteCheck);
@@ -1547,7 +1638,7 @@ $('#copyShareButton').addEventListener('click', async () => {
 $('#settingsButton').addEventListener('click', openSettings);
 $('#refreshWeatherButton').addEventListener('click', () => refreshWeather(true));
 $('#addDayButton').addEventListener('click', () => openDayForm());
-$('#addChecklistButton').addEventListener('click', openChecklistForm);
+$('#addChecklistButton').addEventListener('click', () => openChecklistListForm());
 $('#addExpenseButton').addEventListener('click', openExpenseForm);
 $('#editContactsButton').addEventListener('click', openContactForm);
 $('#photoDialogClose').addEventListener('click', () => $('#photoDialog').close());
@@ -1587,7 +1678,7 @@ $('#importFile').addEventListener('change', async event => {
     const imported = JSON.parse(await file.text());
     if (!imported.meta || !Array.isArray(imported.itinerary) || !Array.isArray(imported.checklist)) throw new Error();
     if (!confirm('导入会覆盖当前数据，确定继续吗？')) return;
-    state = imported;
+    state = normalizeCloudState(imported);
     saveState('数据已导入');
   } catch {
     alert('无法读取这个备份文件。');
