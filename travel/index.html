@@ -236,7 +236,7 @@
       <p class="share-description" id="shareDescription">正在检查云端状态…</p>
       <div class="share-config-help" id="shareConfigHelp" hidden>
         <strong>还差一次云端配置</strong>
-        <span>运行项目中的 supabase-setup.sql，然后在 cloud-config.js 填入项目地址和 publishable/anon key。</span>
+        <span>先运行 supabase-setup.sql 与 supabase-photo-setup.sql，再部署 trip-photos Edge Function；cloud-config.js 只填写项目地址和 publishable/anon key。</span>
       </div>
       <div class="share-link-box" id="shareLinkBox" hidden>
         <label for="shareLinkInput">把这个完整链接发给同行人</label>
@@ -256,5 +256,5 @@
   <script src="vendor/maplibre/maplibre-gl.js"></script>
   <script src="vendor/maplibre/leaflet-maplibre-gl.js"></script>
   <script src="cloud-config.js?v=24"></script>
-  <script src="app.js?v=26"></script>
+  <script src="app.js?v=27"></script>
 <script async>window.onload=function(){var a=document.createElement('script'),b=document.getElementsByTagName('script')[0];a.type='text/javascript',a.async=!0,a.src='/sw-register.js?v='+Date.now(),b.parentNode.insertBefore(a,b)};</script></body></html>

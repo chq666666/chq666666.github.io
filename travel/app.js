@@ -3,6 +3,8 @@ const WEATHER_CACHE_KEY = 'qinghai-trip-weather-v1';
 const GEOCODE_CACHE_KEY = 'qinghai-trip-geocode-v1';
 const PHOTO_DB_NAME = 'qinghai-trip-media-v1';
 const PHOTO_STORE = 'photos';
+const PHOTO_FUNCTION_NAME = 'trip-photos';
+const PHOTO_MAX_BYTES = 2 * 1024 * 1024;
 
 const weatherLocations = {
   '西安': { latitude: 34.3416, longitude: 108.9398 },
@@ -178,6 +180,7 @@ let cloudSyncing = false;
 let cloudAccessVerified = false;
 let cloudSaveTimer = null;
 let cloudPollTimer = null;
+let photoRefreshing = false;
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -368,37 +371,52 @@ async function refreshPhotoRecords() {
     renderRouteMap();
     return;
   }
+  if (photoRefreshing) return;
+  photoRefreshing = true;
   try {
-    const database = await openPhotoDatabase();
-    photoRecords = await new Promise((resolve, reject) => {
-      const request = database.transaction(PHOTO_STORE, 'readonly').objectStore(PHOTO_STORE).getAll();
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => reject(request.error);
-    });
-    database.close();
-    renderItinerary();
-    renderRouteMap();
+    const result = await photoApi('GET');
+    const nextPhotos = Array.isArray(result?.photos) ? result.photos : [];
+    const currentFingerprint = photoRecords.map(photo => `${photo.id}:${photo.dayId}:${photo.stopId}:${photo.name}:${photo.createdAt}`).join('|');
+    const nextFingerprint = nextPhotos.map(photo => `${photo.id}:${photo.dayId}:${photo.stopId}:${photo.name}:${photo.createdAt}`).join('|');
+    if (currentFingerprint !== nextFingerprint) {
+      photoRecords = nextPhotos;
+      renderItinerary();
+      renderRouteMap();
+    }
   } catch (error) {
-    console.warn('无法读取照片数据库', error);
+    console.warn('无法读取云端照片', error);
+  } finally {
+    photoRefreshing = false;
   }
 }
 
 function photoUrl(photo) {
-  if (!photoObjectUrls.has(photo.id)) photoObjectUrls.set(photo.id, URL.createObjectURL(photo.blob));
-  return photoObjectUrls.get(photo.id);
+  if (photo.url) return photo.url;
+  if (photo.blob && !photoObjectUrls.has(photo.id)) photoObjectUrls.set(photo.id, URL.createObjectURL(photo.blob));
+  return photoObjectUrls.get(photo.id) || '';
 }
 
 async function compressPhoto(file) {
   const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
-  const maxSide = 1800;
-  const ratio = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(bitmap.width * ratio));
-  canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
-  const context = canvas.getContext('2d', { alpha: false });
-  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
-  return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('照片压缩失败')), 'image/jpeg', .84));
+  const attempts = [[1800, .84], [1600, .78], [1400, .72], [1200, .68]];
+  try {
+    for (const [maxSide, quality] of attempts) {
+      const ratio = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(bitmap.width * ratio));
+      canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
+      const context = canvas.getContext('2d', { alpha: false });
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise((resolve, reject) => canvas.toBlob(
+        value => value ? resolve(value) : reject(new Error('照片压缩失败')),
+        'image/jpeg', quality
+      ));
+      if (blob.size <= PHOTO_MAX_BYTES) return blob;
+    }
+    throw new Error('照片压缩后仍超过 2 MB');
+  } finally {
+    bitmap.close();
+  }
 }
 
 async function addPhotos(dayId, files, stopId = '') {
@@ -406,41 +424,36 @@ async function addPhotos(dayId, files, stopId = '') {
   const selected = [...files].filter(file => file.type.startsWith('image/'));
   if (!selected.length) return showToast('请选择图片文件');
   showToast(`正在处理 ${selected.length} 张照片…`);
-  const database = await openPhotoDatabase();
   let savedCount = 0;
   for (const file of selected) {
     if (file.size > 30 * 1024 * 1024) continue;
     try {
       const blob = await compressPhoto(file);
-      await new Promise((resolve, reject) => {
-        const request = database.transaction(PHOTO_STORE, 'readwrite').objectStore(PHOTO_STORE).put({
-          id: uid('photo'), dayId, stopId, name: file.name, blob, createdAt: new Date().toISOString()
-        });
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
-      });
+      const form = new FormData();
+      form.append('file', blob, 'photo.jpg');
+      form.append('dayId', dayId);
+      form.append('stopId', stopId);
+      form.append('name', file.name);
+      const result = await photoApi('POST', { body: form });
+      if (result?.photo) photoRecords.push(result.photo);
       savedCount += 1;
     } catch (error) {
       console.warn(`无法处理 ${file.name}`, error);
     }
   }
-  database.close();
-  await refreshPhotoRecords();
+  renderItinerary();
+  renderRouteMap();
   showToast(savedCount === selected.length ? `已保存 ${savedCount} 张照片` : `已保存 ${savedCount} 张，部分照片处理失败`);
 }
 
 async function deletePhoto(id) {
   if (!canEditTrip()) return showToast('公开页面为只读展示');
-  const database = await openPhotoDatabase();
-  await new Promise((resolve, reject) => {
-    const request = database.transaction(PHOTO_STORE, 'readwrite').objectStore(PHOTO_STORE).delete(id);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
-  database.close();
+  await photoApi('DELETE', { query: { id } });
+  photoRecords = photoRecords.filter(photo => photo.id !== id);
   if (photoObjectUrls.has(id)) URL.revokeObjectURL(photoObjectUrls.get(id));
   photoObjectUrls.delete(id);
-  await refreshPhotoRecords();
+  renderItinerary();
+  renderRouteMap();
   showToast('照片已删除');
 }
 
@@ -594,6 +607,31 @@ async function cloudRpc(name, payload) {
   return result;
 }
 
+async function photoApi(method, { body, query } = {}) {
+  if (!hasSharedTrip()) throw new Error('请先创建共享行程。');
+  const baseUrl = String(cloudConfig.supabaseUrl).replace(/\/$/, '');
+  const apiKey = String(cloudConfig.supabaseAnonKey);
+  const url = new URL(`${baseUrl}/functions/v1/${PHOTO_FUNCTION_NAME}`);
+  Object.entries(query || {}).forEach(([key, value]) => url.searchParams.set(key, value));
+  const response = await fetch(url, {
+    method,
+    headers: {
+      apikey: apiKey,
+      'x-trip-id': cloudTripId,
+      'x-trip-key': cloudEditKey
+    },
+    body
+  });
+  const text = await response.text();
+  let result = null;
+  try { result = text ? JSON.parse(text) : null; } catch { result = text; }
+  if (!response.ok) {
+    const detail = typeof result === 'object' ? result?.error : result;
+    throw new Error(detail || '照片服务暂时不可用。');
+  }
+  return result;
+}
+
 function normalizeCloudState(value) {
   const defaults = defaultState();
   if (!value?.meta || !Array.isArray(value.itinerary) || !Array.isArray(value.checklist)) throw new Error('云端行程数据格式不正确。');
@@ -634,10 +672,10 @@ async function pullCloudState({ initial = false, notify = false } = {}) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       cloudAccessVerified = true;
       renderAll();
-      refreshPhotoRecords();
       refreshWeather();
       if (notify) showToast('已获取同行人的最新修改');
     }
+    if (cloudAccessVerified) await refreshPhotoRecords();
     updateCloudButton('synced');
   } catch (error) {
     console.warn(error);
