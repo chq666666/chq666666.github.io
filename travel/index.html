@@ -6,10 +6,9 @@
   <meta name="theme-color" content="#123b49">
   <meta name="description" content="青海自驾旅行计划、每日预订、行李清单与花费管理">
   <title>向青海出发</title>
-  <link rel="manifest" href="manifest.webmanifest">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="vendor/maplibre/maplibre-gl.css">
-  <link rel="stylesheet" href="styles.css?v=23">
+  <link rel="stylesheet" href="styles.css?v=25">
 </head>
 <body>
   <div class="app-shell">
@@ -41,8 +40,8 @@
           <h1 id="pageTitle">旅行概览</h1>
         </div>
         <div class="top-actions">
+          <span class="access-badge" id="accessBadge">只读展示</span>
           <button class="secondary-button cloud-button" id="cloudButton">仅本机</button>
-          <button class="secondary-button" id="installButton" hidden>安装到桌面</button>
           <button class="round-button" id="settingsButton" aria-label="旅行设置">•••</button>
         </div>
       </header>
@@ -132,7 +131,7 @@
         </div>
         <article class="route-map-panel">
           <div class="route-map-heading">
-            <div><p class="eyebrow">TRIP MAP</p><h2>行程路线地图</h2><p>输入地名即可自动定位；点击地点可编辑资料、打卡和上传照片。</p></div>
+            <div><p class="eyebrow">TRIP MAP</p><h2>行程路线地图</h2><p>输入地名即可自动定位；点击地点可查看资料、打卡状态和旅途照片。</p></div>
             <div class="route-map-tools">
               <button class="secondary-button" data-add-map-stop>＋ 添加地点</button>
               <div class="route-map-progress"><strong id="mapCheckinCount">0 / 7</strong><span>地点已打卡</span></div>
@@ -257,5 +256,5 @@
   <script src="vendor/maplibre/maplibre-gl.js"></script>
   <script src="vendor/maplibre/leaflet-maplibre-gl.js"></script>
   <script src="cloud-config.js?v=24"></script>
-  <script src="app.js?v=23"></script>
+  <script src="app.js?v=25"></script>
 <script async>window.onload=function(){var a=document.createElement('script'),b=document.getElementsByTagName('script')[0];a.type='text/javascript',a.async=!0,a.src='/sw-register.js?v='+Date.now(),b.parentNode.insertBefore(a,b)};</script></body></html>

@@ -146,10 +146,9 @@ function loadState() {
   }
 }
 
-let state = loadState();
+let state = defaultState();
 let activeSubmit = null;
 let activeBusyLabel = '正在保存…';
-let deferredInstallPrompt = null;
 let weatherCache = loadWeatherCache();
 let weatherData = weatherCache.data;
 let photoRecords = [];
@@ -169,9 +168,9 @@ let cloudRevision = 0;
 let cloudUpdatedAt = '';
 let cloudDirty = false;
 let cloudSyncing = false;
+let cloudAccessVerified = false;
 let cloudSaveTimer = null;
 let cloudPollTimer = null;
-localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -356,6 +355,12 @@ function openPhotoDatabase() {
 }
 
 async function refreshPhotoRecords() {
+  if (!canEditTrip()) {
+    photoRecords = [];
+    renderItinerary();
+    renderRouteMap();
+    return;
+  }
   try {
     const database = await openPhotoDatabase();
     photoRecords = await new Promise((resolve, reject) => {
@@ -390,6 +395,7 @@ async function compressPhoto(file) {
 }
 
 async function addPhotos(dayId, files, stopId = '') {
+  if (!canEditTrip()) return showToast('公开页面为只读展示');
   const selected = [...files].filter(file => file.type.startsWith('image/'));
   if (!selected.length) return showToast('请选择图片文件');
   showToast(`正在处理 ${selected.length} 张照片…`);
@@ -417,6 +423,7 @@ async function addPhotos(dayId, files, stopId = '') {
 }
 
 async function deletePhoto(id) {
+  if (!canEditTrip()) return showToast('公开页面为只读展示');
   const database = await openPhotoDatabase();
   await new Promise((resolve, reject) => {
     const request = database.transaction(PHOTO_STORE, 'readwrite').objectStore(PHOTO_STORE).delete(id);
@@ -437,6 +444,11 @@ function tripDays() {
 }
 
 function saveState(message) {
+  if (!canEditTrip()) {
+    showToast('公开页面为只读展示，请使用完整协作链接编辑');
+    renderAll();
+    return;
+  }
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   renderAll();
   scheduleCloudSave();
@@ -460,6 +472,36 @@ function hasSharedTrip() {
   return isCloudConfigured() && Boolean(cloudTripId && cloudEditKey);
 }
 
+function canEditTrip() {
+  return hasSharedTrip() && cloudAccessVerified;
+}
+
+const editControlSelector = [
+  '#settingsButton', '#importButton', '#addDayButton', '#addChecklistButton',
+  '#addExpenseButton', '#editContactsButton', '#clearExpensesButton',
+  '[data-edit-day]', '[data-delete-day]', '[data-add-booking-day]',
+  '[data-edit-booking]', '[data-delete-booking]', '[data-delete-photo]',
+  '.photo-upload-button', '[data-add-map-stop]', '[data-edit-map-stop]',
+  '[data-toggle-checkin]', '[data-delete-map-stop]', '[data-delete-check]',
+  '[data-delete-expense]'
+].join(',');
+
+function applyAccessMode() {
+  const editable = canEditTrip();
+  document.body.classList.toggle('read-only', !editable);
+  const badge = $('#accessBadge');
+  if (badge) {
+    badge.textContent = editable ? '协作编辑' : '只读展示';
+    badge.classList.toggle('editable', editable);
+  }
+  $$(editControlSelector).forEach(control => { control.hidden = !editable; });
+  $$('[data-check-toggle]').forEach(input => { input.disabled = !editable; });
+  const expenseJump = $('[data-jump="expenses"]');
+  if (expenseJump) expenseJump.textContent = editable ? '记一笔' : '查看花费';
+  const planJump = $('[data-jump="plan"]');
+  if (planJump) planJump.textContent = editable ? '编辑行程' : '查看行程';
+}
+
 function updateCloudButton(status = 'local') {
   const button = $('#cloudButton');
   if (!button) return;
@@ -468,13 +510,13 @@ function updateCloudButton(status = 'local') {
     button.textContent = '同步中…';
     button.classList.add('syncing');
   } else if (status === 'synced') {
-    button.textContent = '✓ 已共享';
+    button.textContent = '✓ 协作编辑';
     button.classList.add('synced');
   } else if (status === 'error') {
     button.textContent = '同步失败';
     button.classList.add('error');
   } else if (isCloudConfigured()) {
-    button.textContent = '创建共享';
+    button.textContent = '创建协作副本';
   } else {
     button.textContent = '仅本机';
   }
@@ -507,7 +549,7 @@ function renderShareDialog() {
   if (!isCloudConfigured()) {
     description.textContent = '网页已经具备多人同步能力，但还没有连接云端数据库。配置完成前，数据仍只保存在当前设备。';
   } else if (!hasSharedTrip()) {
-    description.textContent = '创建后会生成一个专属共享链接。同行人打开同一个链接，即可查看和编辑同一份行程。';
+    description.textContent = '公开页面始终只读。创建协作副本后会生成专属编辑链接，只有拿到完整链接的同行人才能修改。';
   } else {
     const time = cloudUpdatedAt ? new Date(cloudUpdatedAt).toLocaleString('zh-CN', { hour12: false }) : '等待首次同步';
     description.textContent = `这份行程正在自动同步。最近一次云端更新：${time}`;
@@ -571,13 +613,17 @@ async function pullCloudState({ initial = false, notify = false } = {}) {
       cloudUpdatedAt = result.updated_at || '';
       selectedMapStopId = state.mapStops?.some(stop => stop.id === selectedMapStopId) ? selectedMapStopId : state.mapStops?.[0]?.id || '';
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      cloudAccessVerified = true;
       renderAll();
+      refreshPhotoRecords();
       refreshWeather();
       if (notify) showToast('已获取同行人的最新修改');
     }
     updateCloudButton('synced');
   } catch (error) {
     console.warn(error);
+    cloudAccessVerified = false;
+    applyAccessMode();
     updateCloudButton('error');
     if (initial || notify) showToast(error.message || '云端同步失败');
   } finally {
@@ -641,6 +687,7 @@ async function createSharedTrip() {
     });
     cloudTripId = nextTripId;
     cloudEditKey = nextEditKey;
+    cloudAccessVerified = true;
     cloudRevision = Number(result?.revision || 1);
     cloudUpdatedAt = result?.updated_at || '';
     cloudDirty = false;
@@ -651,6 +698,8 @@ async function createSharedTrip() {
     history.replaceState(null, '', `${url.pathname}${url.search}${location.hash || '#home'}`);
     startCloudPolling();
     updateCloudButton('synced');
+    renderAll();
+    refreshPhotoRecords();
     renderShareDialog();
     showToast('共享行程已创建');
   } catch (error) {
@@ -1090,6 +1139,7 @@ function renderAll() {
   renderChecklist();
   renderExpenses();
   renderContacts();
+  applyAccessMode();
 }
 
 function openForm({ eyebrow = 'EDIT', title, fields, submitLabel = '保存', busyLabel = '正在保存…', onSubmit }) {
@@ -1320,6 +1370,11 @@ function openContactForm() {
 
 $('#dynamicForm').addEventListener('submit', async event => {
   event.preventDefault();
+  if (!canEditTrip()) {
+    $('#formDialog').close();
+    showToast('公开页面为只读展示');
+    return;
+  }
   const data = Object.fromEntries(new FormData(event.currentTarget));
   const submitButton = $('#dialogSaveButton');
   const originalLabel = submitButton.textContent;
@@ -1346,6 +1401,12 @@ document.addEventListener('click', event => {
     const view = viewLink.dataset.view || viewLink.dataset.jump;
     history.pushState(null, '', `#${view}`);
     setView(view);
+    return;
+  }
+
+  if (!canEditTrip() && event.target.closest(editControlSelector)) {
+    event.preventDefault();
+    showToast('公开页面为只读展示，请使用完整协作链接编辑');
     return;
   }
 
@@ -1453,6 +1514,11 @@ document.addEventListener('click', event => {
 document.addEventListener('change', event => {
   const input = event.target.closest('[data-photo-input]');
   if (!input || !input.files?.length) return;
+  if (!canEditTrip()) {
+    input.value = '';
+    showToast('公开页面为只读展示');
+    return;
+  }
   addPhotos(input.dataset.photoInput, input.files, input.dataset.photoStop || '')
     .catch(error => { console.warn(error); showToast('照片保存失败，请重试'); })
     .finally(() => { input.value = ''; });
@@ -1489,6 +1555,7 @@ $('#photoDialog').addEventListener('click', event => {
   if (event.target === $('#photoDialog')) $('#photoDialog').close();
 });
 $('#clearExpensesButton').addEventListener('click', () => {
+  if (!canEditTrip()) return showToast('公开页面为只读展示');
   if (!state.expenses.length) return showToast('目前没有花费记录');
   if (confirm('确定清空全部花费记录吗？此操作无法撤销。')) {
     state.expenses = [];
@@ -1509,6 +1576,11 @@ $('#exportButton').addEventListener('click', () => {
 
 $('#importButton').addEventListener('click', () => $('#importFile').click());
 $('#importFile').addEventListener('change', async event => {
+  if (!canEditTrip()) {
+    event.target.value = '';
+    showToast('公开页面为只读展示');
+    return;
+  }
   const file = event.target.files[0];
   if (!file) return;
   try {
@@ -1530,21 +1602,19 @@ window.addEventListener('online', () => pullCloudState({ notify: true }));
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') pullCloudState();
 });
-window.addEventListener('beforeinstallprompt', event => {
-  event.preventDefault();
-  deferredInstallPrompt = event;
-  $('#installButton').hidden = false;
-});
-$('#installButton').addEventListener('click', async () => {
-  if (!deferredInstallPrompt) return;
-  deferredInstallPrompt.prompt();
-  await deferredInstallPrompt.userChoice;
-  deferredInstallPrompt = null;
-  $('#installButton').hidden = true;
-});
-
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
+  window.addEventListener('load', async () => {
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations
+        .filter(registration => registration.scope.includes('/travel/'))
+        .map(registration => registration.unregister()));
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.filter(key => key.startsWith('qinghai-trip-')).map(key => caches.delete(key)));
+      }
+    } catch { /* 清理旧版离线安装失败时不影响网页使用 */ }
+  });
 }
 
 renderAll();

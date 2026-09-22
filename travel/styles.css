@@ -85,7 +85,11 @@ a { color: inherit; text-decoration: none; }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 28px; }
 .topbar h1 { margin: 4px 0 0; font-size: clamp(25px, 3vw, 34px); font-weight: 600; letter-spacing: -.035em; }
 .eyebrow { margin: 0; color: var(--lake); font-size: 11px; font-weight: 700; letter-spacing: .17em; text-transform: uppercase; }
-.top-actions { display: flex; gap: 10px; }
+.top-actions { display: flex; align-items: center; gap: 10px; }
+.access-badge { display: inline-flex; align-items: center; min-height: 38px; padding: 0 13px; border: 1px solid rgba(18,59,73,.12); border-radius: 999px; background: rgba(255,255,255,.58); color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: .04em; white-space: nowrap; }
+.access-badge::before { width: 7px; height: 7px; margin-right: 7px; border-radius: 50%; background: #9a8f7d; content: ''; }
+.access-badge.editable { border-color: rgba(61,125,134,.25); background: var(--lake-light); color: var(--lake); }
+.access-badge.editable::before { background: var(--lake); }
 .cloud-button { white-space: nowrap; }
 .cloud-button.synced { border-color: rgba(61,125,134,.3); background: var(--lake-light); color: var(--lake); }
 .cloud-button.syncing { opacity: .72; }
@@ -413,6 +417,27 @@ dialog form { padding: 24px; }
 .share-description { margin: 0; color: var(--ink-soft); line-height: 1.7; }
 .share-config-help, .share-link-box { display: grid; gap: 7px; margin-top: 18px; padding: 15px; border-radius: 14px; background: var(--paper); }
 .share-config-help[hidden], .share-link-box[hidden] { display: none; }
+[hidden] { display: none !important; }
+.read-only #settingsButton,
+.read-only #importButton,
+.read-only #addDayButton,
+.read-only #addChecklistButton,
+.read-only #addExpenseButton,
+.read-only #editContactsButton,
+.read-only #clearExpensesButton,
+.read-only [data-edit-day],
+.read-only [data-delete-day],
+.read-only [data-add-booking-day],
+.read-only [data-edit-booking],
+.read-only [data-delete-booking],
+.read-only [data-delete-photo],
+.read-only .photo-upload-button,
+.read-only [data-add-map-stop],
+.read-only [data-edit-map-stop],
+.read-only [data-toggle-checkin],
+.read-only [data-delete-map-stop],
+.read-only [data-delete-check],
+.read-only [data-delete-expense] { display: none !important; }
 .share-config-help strong, .share-link-box label { color: var(--ink); font-size: 13px; font-weight: 600; }
 .share-config-help span, .share-link-box small { color: var(--ink-soft); font-size: 11px; line-height: 1.6; }
 .share-link-box input { width: 100%; min-height: 43px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px; background: #fff; color: var(--ink); }
